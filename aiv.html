@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 기타 연습 비주얼라이저 - 오류 최종 수정</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        canvas {
+            background-color: #1f2937; /* bg-gray-800 */
+            border-radius: 0.5rem; /* rounded-lg */
+            border: 1px solid #4b5563; /* border-gray-600 */
+        }
+        .control-btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .control-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .control-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+            background: #67e8f9; cursor: pointer; margin-top: -6px;
+        }
+        input[type=range]::-moz-range-thumb {
+            height: 16px; width: 16px; border-radius: 50%; background: #67e8f9; cursor: pointer;
+        }
+        .loader {
+            border: 5px solid #f3f3f3; border-radius: 50%; border-top: 5px solid #3498db;
+            width: 50px; height: 50px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-5xl bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8 space-y-6">
+        
+        <header class="text-center">
+            <h1 class="text-2xl md:text-3xl font-bold text-cyan-400">AI 기타 연습 비주얼라이저 🎸</h1>
+            <p class="text-gray-400 mt-2">원곡과 내 연주의 음고를 비교하고, AI의 도움을 받아보세요.</p>
+        </header>
+
+        <!-- 기본 컨트롤 -->
+        <div class="bg-gray-700 p-4 rounded-lg flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex flex-col items-center w-full md:w-auto">
+                <label for="audioFile" class="control-btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-lg cursor-pointer w-full text-center">
+                    🎵 음악 파일 선택
+                </label>
+                <!-- *** FIX: This input element was missing, causing the error. *** -->
+                <input type="file" id="audioFile" accept="audio/*" class="hidden">
+                <span id="fileName" class="text-xs text-gray-400 mt-2 truncate w-full text-center">선택된 파일 없음</span>
+            </div>
+            <div class="flex items-center justify-center space-x-4">
+                 <button id="micBtn" class="control-btn bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-lg w-28">마이크 켜기</button>
+            </div>
+            <div class="flex flex-col items-center w-full md:w-1/3">
+                <label for="speedControl" class="text-sm font-medium text-gray-300">재생 속도: <span id="speedValue">1.0</span>x</label>
+                <input type="range" id="speedControl" min="0.2" max="2" step="0.1" value="1" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer mt-2">
+            </div>
+        </div>
+        
+        <!-- Gemini AI 기능 섹션 -->
+        <div class="bg-gray-700 p-4 rounded-lg space-y-4">
+            <h2 class="text-xl font-bold text-center text-cyan-300">✨ AI 연습 도우미</h2>
+            <div>
+                <label for="songInfo" class="block text-sm font-medium text-gray-300 mb-1">곡 제목 & 아티스트</label>
+                <input type="text" id="songInfo" class="w-full bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-cyan-500 focus:border-cyan-500" placeholder="예: 아이유 - 밤편지">
+            </div>
+            <div class="flex flex-col sm:flex-row gap-4">
+                <button id="chordAnalysisBtn" class="control-btn flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 px-4 rounded-lg">✨ AI 코드 분석</button>
+                <button id="practicePlanBtn" class="control-btn flex-1 bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-4 rounded-lg">✨ AI 연습 계획</button>
+            </div>
+        </div>
+
+        <!-- 시각화 섹션 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 원곡 플레이어 -->
+            <div>
+                <h2 class="text-lg font-semibold text-center mb-2 text-cyan-300">원곡 (Original Pitch)</h2>
+                <canvas id="originalCanvas" width="600" height="200"></canvas>
+                <div id="player-controls" class="mt-3 bg-gray-700 p-3 rounded-lg opacity-50">
+                    <div class="flex items-center justify-center gap-4">
+                        <button id="playBtn" class="control-btn bg-green-600 hover:bg-green-500 text-white font-bold p-2 rounded-full w-12 h-12 flex items-center justify-center" disabled>
+                            <svg id="playIconSvg" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <svg id="pauseIconSvg" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </button>
+                        <span id="currentTime" class="text-sm font-mono">00:00</span>
+                        <input type="range" id="progressBar" value="0" step="0.01" class="w-full h-1 bg-gray-500 rounded-lg appearance-none cursor-pointer">
+                        <span id="totalDuration" class="text-sm font-mono">00:00</span>
+                    </div>
+                </div>
+            </div>
+            <!-- 내 연주 -->
+            <div>
+                <h2 class="text-lg font-semibold text-center mb-2 text-green-300">내 연주 (My Pitch)</h2>
+                <canvas id="micCanvas" width="600" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Gemini 결과 표시용 모달 -->
+    <div id="geminiModal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b border-gray-700">
+                <h3 id="modalTitle" class="text-xl font-bold text-cyan-400">AI 분석 결과</h3>
+                <button id="closeModalBtn" class="text-gray-400 hover:text-white">&times;</button>
+            </div>
+            <div id="modalContent" class="p-6 overflow-y-auto">
+                <!-- 로딩 스피너 또는 결과가 여기에 표시됩니다 -->
+            </div>
+        </div>
+    </div>
+
+</body>
+<script>
+    window.onload = function() {
+        // --- 전역 변수 ---
+        let audioContext, originalSourceNode, micSourceNode, originalAnalyserNode, micAnalyserNode;
+        let audioBuffer, micStream;
+        let isPlaying = false, isMicOn = false;
+        let startOffset = 0, startTime = 0;
+        let lastOriginalY = null, lastMicY = null;
+        let progressAnimationId;
+
+        // --- DOM 요소 ---
+        const fileInput = document.getElementById('audioFile');
+        const fileNameSpan = document.getElementById('fileName');
+        const playBtn = document.getElementById('playBtn');
+        const playIcon = document.getElementById('playIconSvg');
+        const pauseIcon = document.getElementById('pauseIconSvg');
+        const micBtn = document.getElementById('micBtn');
+        const speedControl = document.getElementById('speedControl');
+        const speedValueSpan = document.getElementById('speedValue');
+        const originalCanvas = document.getElementById('originalCanvas');
+        const micCanvas = document.getElementById('micCanvas');
+        const originalCtx = originalCanvas.getContext('2d');
+        const micCtx = micCanvas.getContext('2d');
+        const playerControls = document.getElementById('player-controls');
+        const progressBar = document.getElementById('progressBar');
+        const currentTimeSpan = document.getElementById('currentTime');
+        const totalDurationSpan = document.getElementById('totalDuration');
+        const songInfoInput = document.getElementById('songInfo');
+        const chordAnalysisBtn = document.getElementById('chordAnalysisBtn');
+        const practicePlanBtn = document.getElementById('practicePlanBtn');
+        const geminiModal = document.getElementById('geminiModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalContent = document.getElementById('modalContent');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+
+        // --- Gemini API 호출 함수 ---
+        async function callGeminiAPI(prompt) {
+            modalTitle.textContent = "AI 분석 중...";
+            modalContent.innerHTML = `<div class="flex justify-center items-center h-48"><div class="loader"></div></div>`;
+            geminiModal.classList.remove('hidden');
+
+            const apiKey = ""; // API 키는 Canvas 환경에서 자동으로 제공됩니다.
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            
+            const payload = {
+                contents: [{ role: "user", parts: [{ text: prompt }] }]
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error(`API 요청 실패: ${response.status}`);
+
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (text) {
+                    modalContent.innerHTML = `<pre class="whitespace-pre-wrap text-left text-gray-300 font-sans">${text}</pre>`;
+                } else {
+                    throw new Error("API로부터 유효한 응답을 받지 못했습니다.");
+                }
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                modalContent.textContent = `오류가 발생했습니다: ${error.message}`;
+            }
+        }
+
+        // --- 이벤트 리스너 (Gemini) ---
+        chordAnalysisBtn.addEventListener('click', () => {
+            const songInfo = songInfoInput.value.trim();
+            if (!songInfo) {
+                alert('코드 분석을 위해 곡 제목과 아티스트를 입력해주세요.');
+                return;
+            }
+            const prompt = `당신은 능숙한 기타리스트입니다. '${songInfo}'의 기타 코드를 찾아서 쉬운 텍스트 형식으로 보여주세요. 여러 버전이 있다면 가장 대중적인 버전을 알려주세요. 코드 다이어그램은 필요 없습니다.`;
+            modalTitle.textContent = "AI 코드 분석 결과";
+            callGeminiAPI(prompt);
+        });
+
+        practicePlanBtn.addEventListener('click', () => {
+            const songInfo = songInfoInput.value.trim();
+            if (!songInfo) {
+                alert('연습 계획을 위해 곡 제목과 아티스트를 입력해주세요.');
+                return;
+            }
+            const prompt = `당신은 친절한 기타 선생님입니다. 초중급 기타리스트가 '${songInfo}'를 연습하려고 합니다. 이 곡을 효과적으로 연습할 수 있는 3일치 연습 계획을 세워주세요. 각 날짜마다 집중할 부분(예: 인트로, 코러스)과 구체적인 연습 방법(예: 느린 속도로 코드 전환 연습)을 포함해주세요.`;
+            modalTitle.textContent = "AI 연습 계획 결과";
+            callGeminiAPI(prompt);
+        });
+
+        closeModalBtn.addEventListener('click', () => {
+            geminiModal.classList.add('hidden');
+        });
+
+        // --- 핵심 로직 함수 ---
+        function initAudioContext() {
+            if (!audioContext) {
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    alert('Web Audio API가 이 브라우저에서 지원되지 않습니다.');
+                    console.error(e);
+                }
+            }
+        }
+
+        function handleFileSelect(event) {
+            if (event.target.files.length === 0) return;
+            initAudioContext();
+            if (!audioContext) return;
+
+            const file = event.target.files[0];
+            fileNameSpan.textContent = "로딩 중...";
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                audioContext.decodeAudioData(e.target.result)
+                    .then(buffer => {
+                        if (isPlaying) pausePlayback();
+                        audioBuffer = buffer;
+                        fileNameSpan.textContent = file.name;
+                        const cleanedName = file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " ");
+                        songInfoInput.value = cleanedName;
+                        
+                        totalDurationSpan.textContent = formatTime(buffer.duration);
+                        progressBar.max = buffer.duration;
+                        progressBar.value = 0;
+                        currentTimeSpan.textContent = formatTime(0);
+                        startOffset = 0;
+                        
+                        setPlayIcon(true);
+                        playBtn.disabled = false;
+                        playerControls.classList.remove('opacity-50');
+                        clearCanvas(originalCtx);
+                    })
+                    .catch(err => {
+                        alert('오디오 파일 디코딩에 실패했습니다.');
+                        fileNameSpan.textContent = '파일 로드 실패';
+                    });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function togglePlayback() {
+            if (!audioBuffer || playBtn.disabled) return;
+            if (isPlaying) pausePlayback(); else startPlayback();
+        }
+
+        function startPlayback() {
+            if (audioContext.state === 'suspended') audioContext.resume();
+            originalSourceNode = audioContext.createBufferSource();
+            originalSourceNode.buffer = audioBuffer;
+            originalSourceNode.playbackRate.value = parseFloat(speedControl.value);
+            originalAnalyserNode = audioContext.createAnalyser();
+            originalAnalyserNode.fftSize = 4096;
+            originalSourceNode.connect(originalAnalyserNode).connect(audioContext.destination);
+            startTime = audioContext.currentTime;
+            originalSourceNode.start(0, startOffset % audioBuffer.duration);
+            isPlaying = true;
+            setPlayIcon(false);
+            drawPitch(originalAnalyserNode, originalCtx, '#67e8f9', 'original');
+            updateProgress();
+            originalSourceNode.onended = () => {
+                if (isPlaying) {
+                    isPlaying = false;
+                    startOffset = 0;
+                    setPlayIcon(true);
+                    progressBar.value = 0;
+                    currentTimeSpan.textContent = formatTime(0);
+                    cancelAnimationFrame(window.originalAnimationId);
+                    cancelAnimationFrame(progressAnimationId);
+                    lastOriginalY = null;
+                    clearCanvas(originalCtx);
+                }
+            };
+        }
+
+        function pausePlayback() {
+            if (!originalSourceNode) return;
+            const playbackRate = originalSourceNode.playbackRate.value;
+            startOffset += (audioContext.currentTime - startTime) * playbackRate;
+            originalSourceNode.onended = null;
+            originalSourceNode.stop();
+            isPlaying = false;
+            setPlayIcon(true);
+            cancelAnimationFrame(window.originalAnimationId);
+            cancelAnimationFrame(progressAnimationId);
+            lastOriginalY = null; 
+        }
+
+        async function toggleMic() {
+            initAudioContext();
+            if (!audioContext) return;
+            if (isMicOn) {
+                stopMic();
+            } else {
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    micSourceNode = audioContext.createMediaStreamSource(micStream);
+                    micAnalyserNode = audioContext.createAnalyser();
+                    micAnalyserNode.fftSize = 4096;
+                    micSourceNode.connect(micAnalyserNode);
+                    isMicOn = true;
+                    micBtn.textContent = '마이크 끄기';
+                    micBtn.classList.replace('bg-red-600', 'bg-gray-500');
+                    drawPitch(micAnalyserNode, micCtx, '#86efac', 'mic');
+                } catch (err) {
+                    alert('마이크에 접근할 수 없습니다.');
+                }
+            }
+        }
+
+        function stopMic() {
+            if (micStream) micStream.getTracks().forEach(track => track.stop());
+            if (micSourceNode) micSourceNode.disconnect();
+            isMicOn = false;
+            micBtn.textContent = '마이크 켜기';
+            micBtn.classList.replace('bg-gray-500', 'bg-red-600');
+            cancelAnimationFrame(window.micAnimationId);
+            clearCanvas(micCtx);
+            lastMicY = null;
+        }
+        
+        function handleSpeedControl(e) {
+            const speed = parseFloat(e.target.value).toFixed(1);
+            speedValueSpan.textContent = speed;
+            if (isPlaying && originalSourceNode) {
+                originalSourceNode.playbackRate.value = speed;
+            }
+        }
+
+        function handleProgressBar(e) {
+            const seekTime = parseFloat(e.target.value);
+            currentTimeSpan.textContent = formatTime(seekTime);
+            if (isPlaying) {
+                pausePlayback();
+                startOffset = seekTime;
+                startPlayback();
+            } else {
+                startOffset = seekTime;
+            }
+        }
+        
+        function setPlayIcon(showPlay) {
+            if (showPlay) {
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+            } else {
+                playIcon.classList.add('hidden');
+                pauseIcon.classList.remove('hidden');
+            }
+        }
+
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function clearCanvas(ctx) {
+            ctx.fillStyle = '#1f2937';
+            ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        }
+
+        function updateProgress() {
+            if (!isPlaying) return;
+            const playbackRate = parseFloat(speedControl.value);
+            const currentPlaybackTime = startOffset + (audioContext.currentTime - startTime) * playbackRate;
+            if (currentPlaybackTime < audioBuffer.duration) {
+                progressBar.value = currentPlaybackTime;
+                currentTimeSpan.textContent = formatTime(currentPlaybackTime);
+            }
+            progressAnimationId = requestAnimationFrame(updateProgress);
+        }
+
+        function drawPitch(analyser, ctx, color, type) {
+            if ((type === 'original' && !isPlaying) || (type === 'mic' && !isMicOn)) return;
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            const imageData = ctx.getImageData(1, 0, ctx.canvas.width - 1, ctx.canvas.height);
+            ctx.putImageData(imageData, 0, 0);
+            ctx.fillStyle = '#1f2937';
+            ctx.fillRect(ctx.canvas.width - 1, 0, 1, ctx.canvas.height);
+            analyser.getByteFrequencyData(dataArray);
+            let maxVal = -1, maxIndex = -1;
+            for (let i = 0; i < bufferLength; i++) {
+                if (dataArray[i] > maxVal && dataArray[i] > 128) {
+                    maxVal = dataArray[i];
+                    maxIndex = i;
+                }
+            }
+            const nyquist = audioContext.sampleRate / 2;
+            const frequency = maxIndex * nyquist / bufferLength;
+            let currentY = null;
+            if (frequency > 0) {
+                const minFreq = 80, maxFreq = 1400;
+                const y = ctx.canvas.height - (ctx.canvas.height * (Math.log(frequency) - Math.log(minFreq)) / (Math.log(maxFreq) - Math.log(minFreq)));
+                if (y > 0 && y < ctx.canvas.height) currentY = y;
+            }
+            let lastY = (type === 'original') ? lastOriginalY : lastMicY;
+            if (currentY !== null && lastY !== null) {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(ctx.canvas.width - 2, lastY);
+                ctx.lineTo(ctx.canvas.width - 1, currentY);
+                ctx.stroke();
+            }
+            if (type === 'original') lastOriginalY = currentY; else lastMicY = currentY;
+            window[type + 'AnimationId'] = requestAnimationFrame(() => drawPitch(analyser, ctx, color, type));
+        }
+        
+        function resizeCanvases() {
+            const container = originalCanvas.parentElement;
+            if (container) {
+                const newWidth = container.clientWidth;
+                originalCanvas.width = newWidth;
+                micCanvas.width = newWidth;
+                clearCanvas(originalCtx);
+                clearCanvas(micCtx);
+            }
+        }
+
+        // --- 초기화 및 이벤트 리스너 등록 ---
+        fileInput.addEventListener('change', handleFileSelect);
+        playBtn.addEventListener('click', togglePlayback);
+        micBtn.addEventListener('click', toggleMic);
+        speedControl.addEventListener('input', handleSpeedControl);
+        progressBar.addEventListener('input', handleProgressBar);
+        window.addEventListener('resize', resizeCanvases);
+        resizeCanvases();
+        setPlayIcon(true);
+    };
+</script>
+</html>
